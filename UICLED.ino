@@ -1,10 +1,21 @@
 /* ---------------- UNITED INTERGALACTIC ---------------- */
 /* ------------------------------------------------------ * 
+ *                                                        * 
  *            _   _ _____  ___ _    ____  ____            * 
  *           | | | |_   _|/ __| |  | __ /|  _ \           * 
  *           | | | |_| |_| |__| |__| __ || |_| |          * 
  *            \___/|_____|\___|____|____\|____/           * 
  *                                                        * 
+ *         THE INTELLEGENT LED ADJUSTMENT SOLUTION        * 
+ *                 BY UNITED INTERGALACTIC                * 
+ *                                                        * 
+ *                      ALPHA VERSION                     * 
+ *                 0.0.1.20201210_alpha_a20               * 
+ *                                                        * 
+ * ------------------------------------------------------ * 
+ *                        THANKS TO                       * 
+ *                           WSY                          * 
+ *                           H B                          * 
  *  ----------------------------------------------------- */
 #include <SPI.h>
 #include <Wire.h>
@@ -21,7 +32,7 @@ const int change_period = 50;
 int change_counter = 0;
 int OC1_change = 0;
 int OC2_change = 0;
-const int max_change = 100;
+const int max_change = 20;
 /* EEPROM DRIVER END */
 
 /* Event DEFINITION START */
@@ -98,6 +109,15 @@ int UI_TARG_PAGE = UI_Main;
 bool UI_NEED_UPDATE = true;
 /* UI DEFINITION END */
 
+/* Main_SIV VARs START */
+bool isFull = false;
+const int MainSIV_fresh_period = 5;
+int MainSIV_fresh_counter = MainSIV_fresh_period - 1;
+int OC1_Rec[50], OC2_Rec[50], OCArr = 0, OC1_AVG, OC2_AVG;
+const int R1_x = 8, R1_y = 17, R2_x = 68, R2_y = 17;
+const int MainSIV_x = 50, MainSIV_y = 12;
+/* Main_SIV VARs END */
+
 /* BUTTON CONFIG START */
 bool ledstate = true, buttonstate;
 int count = 0;
@@ -165,6 +185,7 @@ void save_oc() {
 }
 
 void change_oc(int OCNum, bool isIncrease) {
+  change_counter = 0;
   if(OCNum == 1) {
     if(OC1 <= 25 || OC1 >= 75) {
       if(isIncrease) OC1++;
@@ -174,6 +195,8 @@ void change_oc(int OCNum, bool isIncrease) {
       if(isIncrease) OC1+= 3;
       else OC1 -= 3;
     }
+    if(OC1 > 100) OC1=100;
+    if(OC1 < 0) OC1 = 0;
     is_OC1_modified = true;
     UI_NEED_UPDATE = true;
   }
@@ -186,6 +209,8 @@ void change_oc(int OCNum, bool isIncrease) {
       if(isIncrease) OC2+= 3;
       else OC2 -= 3;
     }
+    if(OC2 > 100) OC2=100;
+    if(OC2 < 0) OC2 = 0;
     is_OC2_modified = true;
     UI_NEED_UPDATE = true;
   }
@@ -202,10 +227,64 @@ void draw_UIMain() {
   display.print("OC1");
   display.setCursor(75,9);
   display.print("OC2");
+  display.fillRect(R1_x, R1_y, MainSIV_x + 2, MainSIV_y + 2, 1);
+  display.fillRect(R1_x + 1, R1_y + 1, MainSIV_x, MainSIV_y, 0);
+  display.fillRect(R2_x, R2_y, MainSIV_x + 2, MainSIV_y + 2, 1);
+  display.fillRect(R2_x + 1, R2_y + 1, MainSIV_x, MainSIV_y, 0);
   display.display();
-  bool is_UIMain_Drawed = true;
+  is_UIMain_Drawed = true;
 }
-
+void fresh_UIMain_SIV() {
+  MainSIV_fresh_counter++;
+  if(MainSIV_fresh_counter >= MainSIV_fresh_period) {
+    display.fillRect(R1_x + 1, R1_y + 1, MainSIV_x, MainSIV_y, 0);
+    display.fillRect(R2_x + 1, R2_y + 1, MainSIV_x, MainSIV_y, 0);
+    MainSIV_fresh_counter = 0;
+    if(isFull) {
+      OC1_AVG = 0;
+      OC2_AVG = 0;
+      for(int i = 0; i < MainSIV_x - 1; i++) {
+        OC1_Rec[i] = OC1_Rec[i+1];
+        OC2_Rec[i] = OC2_Rec[i+1];
+        OC1_AVG += OC1_Rec[i];
+        OC2_AVG += OC2_Rec[i];
+      }
+      OC1_AVG /= MainSIV_x;
+      OC2_AVG /= MainSIV_x;
+      OC1_Rec[MainSIV_x - 1] = (int)(OC1 / 100.0 * MainSIV_y);
+      OC2_Rec[MainSIV_x - 1] = (int)(OC2 / 100.0 * MainSIV_y);
+    }
+    else {
+      OC1_Rec[OCArr] = (int)(OC1 / 100.0 * MainSIV_y);
+      OC2_Rec[OCArr] = (int)(OC2 / 100.0 * MainSIV_y);
+      OCArr++;
+      for(int i = 0; i < OCArr; i++) {
+        OC1_AVG += OC1_Rec[i];
+        OC2_AVG += OC2_Rec[i];
+      }
+      OC1_AVG /= OCArr;
+      OC2_AVG /= OCArr;
+      for(int i = 0; i < MainSIV_y; i++) {
+        if(i % 2) {
+          display.fillRect(R1_x + OCArr, R1_y + MainSIV_y - i + 1, 1, 1, 1);
+        }
+        if(i % 2) {
+          display.fillRect(R2_x + OCArr, R2_y + MainSIV_y - i + 1, 1, 1, 1);
+        }
+      }
+      if(OCArr >= MainSIV_x) isFull = true;
+    }
+    for(int i = 0; i < MainSIV_x; i++) {
+      display.fillRect(R1_x + 1 + i, R1_y + MainSIV_y - OC1_Rec[i] + 1, 1, OC1_Rec[i], 1);
+      display.fillRect(R2_x + 1 + i, R2_y + MainSIV_y - OC2_Rec[i] + 1, 1, OC2_Rec[i], 1);
+      if(i % 2) {
+        display.fillRect(R1_x + 1 + i, R1_y + MainSIV_y - OC1_AVG + 1, 1, 1, 1);
+        display.fillRect(R2_x + 1 + i, R2_y + MainSIV_y - OC2_AVG + 1, 1, 1, 1);
+      }
+    }
+  }
+  display.display();
+}
 void fresh_UIMain() {
   display.fillRect(93, 1, 54, 16, 0);
   display.setCursor(95,1);
@@ -249,12 +328,40 @@ void OLEDCC() {
         break;
     }
   }
+  switch(UI_CUR_PAGE) {
+    case UI_Main:
+      fresh_UIMain_SIV();
+      break;
+  }
 }
 
 //EVENT LOGIC CONTROL CENTER
 void EventCC(int EventID) {
   switch (EventID) {
+    case buttonPress:
+      if(isshutdown) {
+        isshutdown = false;
+        UI_NEED_UPDATE = true;
+        UI_TARG_PAGE = UI_Main;
+      }
+      else {
+        shutdown_counter = 0;
+      }
+      buttonstate = 1;
+      break;
+    case buttonRelease:
+      buttonstate = 0;
+      break;
     case buttonShortPress:
+      if(isshutdown) {
+        isshutdown = false;
+        UI_NEED_UPDATE = true;
+        UI_TARG_PAGE = UI_Main;
+        return;
+      }
+      else {
+        shutdown_counter = 0;
+      }
       switch (UI_TARG_PAGE) {
         case UI_Main:
           UI_TARG_PAGE = UI_Startup;
@@ -297,16 +404,246 @@ void analogWrite16(uint8_t pin, uint16_t val)
 }
 /* PWM FUNC END */
 
+/* MUSIC START */
+//#define NOTE_D0 -1
+//#define NOTE_D1 294
+//#define NOTE_D2 330
+//#define NOTE_D3 350
+//#define NOTE_D4 393
+//#define NOTE_D5 441
+//#define NOTE_D6 495
+//#define NOTE_D7 556
+//
+//#define NOTE_DL1 147
+//#define NOTE_DL2 165
+//#define NOTE_DL3 175
+//#define NOTE_DL4 196
+//#define NOTE_DL5 221
+//#define NOTE_DL6 248
+//#define NOTE_DL7 278
+//
+//#define NOTE_DH1 589
+//#define NOTE_DH2 661
+//#define NOTE_DH3 700
+//#define NOTE_DH4 786
+//#define NOTE_DH5 882
+//#define NOTE_DH6 990
+//#define NOTE_DH7 112
+//
+//#define WHOLE 1
+//#define HALF 0.5
+//#define QUARTER 0.25
+//#define EIGHTH 0.25
+//#define SIXTEENTH 0.625
+//
+////整首曲子的音符部分
+//static const PROGMEM float tune_HLW[] =
+//{
+//  NOTE_DH1, NOTE_D6, NOTE_D5, NOTE_D6, NOTE_D0,
+//  NOTE_DH1, NOTE_D6, NOTE_D5, NOTE_DH1, NOTE_D6, NOTE_D0, NOTE_D6,
+//  NOTE_D6, NOTE_D6, NOTE_D5, NOTE_D6, NOTE_D0, NOTE_D6,
+//  NOTE_DH1, NOTE_D6, NOTE_D5, NOTE_DH1, NOTE_D6, NOTE_D0,
+//
+//  NOTE_D1, NOTE_D1, NOTE_D3,
+//  NOTE_D1, NOTE_D1, NOTE_D3, NOTE_D0,
+//  NOTE_D6, NOTE_D6, NOTE_D6, NOTE_D5, NOTE_D6,
+//  NOTE_D5, NOTE_D1, NOTE_D3, NOTE_D0,
+//  NOTE_DH1, NOTE_D6, NOTE_D6, NOTE_D5, NOTE_D6,
+//  NOTE_D5, NOTE_D1, NOTE_D2, NOTE_D0,
+//  NOTE_D7, NOTE_D7, NOTE_D5, NOTE_D3,
+//  NOTE_D5,
+//  NOTE_DH1, NOTE_D0, NOTE_D6, NOTE_D6, NOTE_D5, NOTE_D5, NOTE_D6, NOTE_D6,
+//  NOTE_D0, NOTE_D5, NOTE_D1, NOTE_D3, NOTE_D0,
+//  NOTE_DH1, NOTE_D0, NOTE_D6, NOTE_D6, NOTE_D5, NOTE_D5, NOTE_D6, NOTE_D6,
+//  NOTE_D0, NOTE_D5, NOTE_D1, NOTE_D2, NOTE_D0,
+//  NOTE_D3, NOTE_D3, NOTE_D1, NOTE_DL6,
+//  NOTE_D1,
+//  NOTE_D3, NOTE_D5, NOTE_D6, NOTE_D6,
+//  NOTE_D3, NOTE_D5, NOTE_D6, NOTE_D6,
+//  NOTE_DH1, NOTE_D0, NOTE_D7, NOTE_D5,
+//  NOTE_D6,
+//};
+//
+////曲子的节拍，即音符持续时间
+//static const PROGMEM float duration_HLW[] =
+//{
+//  1, 1, 0.5, 0.5, 1,
+//  0.5, 0.5, 0.5, 0.5, 1, 0.5, 0.5,
+//  0.5, 1, 0.5, 1, 0.5, 0.5,
+//  0.5, 0.5, 0.5, 0.5, 1, 1,
+//
+//  1, 1, 1 + 1,
+//  0.5, 1, 1 + 0.5, 1,
+//  1, 1, 0.5, 0.5, 1,
+//  0.5, 1, 1 + 0.5, 1,
+//  0.5, 0.5, 0.5, 0.5, 1 + 1,
+//  0.5, 1, 1 + 0.5, 1,
+//  1 + 1, 0.5, 0.5, 1,
+//  1 + 1 + 1 + 1,
+//  0.5, 0.5, 0.5 + 0.25, 0.25, 0.5 + 0.25, 0.25, 0.5 + 0.25, 0.25,
+//  0.5, 1, 0.5, 1, 1,
+//  0.5, 0.5, 0.5 + 0.25, 0.25, 0.5 + 0.25, 0.25, 0.5 + 0.25, 0.25,
+//  0.5, 1, 0.5, 1, 1,
+//  1 + 1, 0.5, 0.5, 1,
+//  1 + 1 + 1 + 1,
+//  0.5, 1, 0.5, 1 + 1,
+//  0.5, 1, 0.5, 1 + 1,
+//  1 + 1, 0.5, 0.5, 1,
+//  1 + 1 + 1 + 1
+//};
+
+#define NTD0 0
+#define NTD1 441
+#define NTD2 495
+#define NTD3 556
+#define NTD4 589
+#define NTD5 661
+#define NTD6 742
+#define NTD7 833
+#define NTDL1 221
+#define NTDL2 248
+#define NTDL3 278
+#define NTDL4 294
+#define NTDL5 330
+#define NTDL6 371
+#define NTDL7 416
+#define NTDH1 882
+#define NTDH2 990
+#define NTDH3 1112
+#define NTDH4 1178
+#define NTDH5 1322
+#define NTDH6 1484
+#define NTDH7 1665
+//列出全部D调的频率
+#define WHOLE 1
+#define HALF 0.5
+#define QUARTER 0.25
+#define EIGHTH 0.25
+#define SIXTEENTH 0.625
+//列出所有节拍
+static const PROGMEM float tune_Astronomia[] =                 //根据简谱列出各频率
+{
+  NTD6,NTD0,NTD6,NTD0,NTD6,NTD0,NTD6,NTDH1,NTDH2,NTDH3,
+ NTD6,NTD0,NTD6,NTD0,NTD6,NTD5,NTD5,NTD6,
+ NTD6,NTD0,NTD6,NTD0,NTD6,NTD0,NTD6,NTDH1,NTDH2,NTDH3,
+ NTD6,NTD0,NTD6,NTD0,NTD6,NTDH4,NTDH4,NTDH3,
+ NTD6,NTD0,NTD6,NTD0,NTD6,NTD0,NTD6,NTDH1,NTDH2,NTDH3,
+ NTD6,NTD0,NTD6,NTD0,NTD6,NTD5,NTD5,NTD6,
+ NTD6,NTD0,NTD6,NTD0,NTD6,NTD0,NTD6,NTDH1,NTDH2,NTDH3,
+ NTD6,NTD5,NTD0,NTD5,NTD6,NTD0,NTD6,
+ NTD0,NTD0,NTD6,NTD6,NTD5,NTD5,NTD5,NTD6,
+ NTD5,NTD3,NTD3,NTD5,NTD3,
+ NTD0,NTD0,NTD6,NTD6,NTD5,NTD6,NTD7,
+ NTDH1,NTD7,NTD6,NTD7,NTD6,NTD5,
+ NTD0,NTD0,NTD6,NTD6,NTD5,NTD5,NTD6,NTD5,
+ NTD5,NTD3,NTD3,NTD5,NTD3,NTD3,NTD0,NTD5,
+ NTD5,NTD6,NTD0,NTD5,NTD5,NTD6,NTD0,NTD6,NTD7,
+ NTDH1,NTDH2,NTD6,NTD3,NTD3,NTD5,
+ NTD5,NTD6,NTD0,NTDH3,NTDH2,NTD0,NTD6,
+ NTD0,NTD6,NTD6,NTDH3,NTDH2,NTD0,
+ NTD0,NTDH2,NTDH2,NTDH1,NTDH2,NTDH1,NTD6,NTD6,NTD5,
+ NTD5,NTD5,NTD5,NTD6,NTD6,NTD3,NTD3,NTD5,
+ NTD5,NTD6,NTD0,NTD3,NTDH2,NTD0,NTD6,
+ NTD0,NTD6,NTD6,NTDH3,NTDH2,NTD0,
+ NTD0,NTDH2,NTDH2,NTDH1,NTDH2,NTDH1,NTD6,NTD6,NTD3,NTD5,
+ NTD5,NTD6,NTD6,NTD5,NTD6,NTD3,NTD0,NTD3,NTD5,
+ NTD5,NTD6,NTDH3,NTDH3,NTD0,NTD7,NTDH1,
+ 
+ NTDH2,NTDH1,NTDH2,NTDH2,NTDH3,NTD6,NTD0,NTD5,NTD5,
+ NTD6,NTDH3,NTDH3,NTDH2,NTDH1,NTD6,NTD5,
+ NTD6,NTD6,NTD6,NTDH1,NTDH2,NTD0,
+ NTD6,NTD6,NTD6,NTD6,NTD5,NTD6,NTDH3,NTD0,NTDH1,
+ NTDH2,NTDH1,NTDH2,NTDH2,NTDH3,NTDH3,NTD0,NTD5,
+ NTD6,NTDH1,NTD0,NTD5,NTD6,NTDH3,NTD0,NTDH3,NTDH2,
+  NTDH1, NTD7, NTD6, NTD5, NTD5, NTD6, NTD0,
+   NTD3, NTD3, NTD5,
+  NTD5,NTD6,NTD0,NTDH3,NTDH2,NTD0,NTD6,
+  NTD0,NTD6,NTD6,NTDH3,NTDH2,NTD0,
+  NTD0, NTDH2, NTDH2, NTDH1, NTDH2, NTDH1, NTD6, NTD6, NTD3, NTD5,
+  NTD5, NTD6, NTD6, NTD5, NTD6, NTD3, NTD3, NTD5,
+  NTD5, NTD6, NTD6, NTDH3, NTDH3, NTD0, NTD7, NTDH1,
+ NTDH2,NTDH1,NTDH2,NTDH2,NTDH3,NTD6,NTD0,NTD5,NTD5,
+ NTD6,NTDH3,NTDH3,NTDH2,NTDH1,NTD6,NTD5,
+ NTD6,NTD6,NTD6,NTDH1,NTDH2,NTD0,
+ NTD6,NTD6,NTD6,NTD6,NTD5,NTD6,NTDH3,NTD0,NTDH1,
+ NTDH2,NTDH1,NTDH2,NTDH2,NTDH3,NTDH3,NTD0,NTD5,
+ NTD6,NTDH1,NTD0,NTD5,NTD6,NTDH3,NTD0,NTDH3,NTDH2,
+ NTDH1,NTD7,NTD6,NTD5,NTD5,NTD6,NTD0,NTD5,
+ NTD6,NTDH1,NTD0,NTD5,NTD6,NTDH5,NTD0,NTDH3,NTDH2,
+ NTDH2,NTDH2,NTDH3,NTDH5,NTDH5,NTDH6,
+};
+static const PROGMEM float duration_Astronomia[] =                   //根据简谱列出各节拍
+{
+ 
+ 1,0.05,1,0.05,1,0.05,0.25,0.25,0.25,0.25,
+ 1,0.05,1,0.05,0.5,0.5,0.5,0.5,
+ 1,0.05,1,0.05,1,0.05,0.25,0.25,0.25,0.25,
+ 1,0.05,1,0.05,0.5,0.5,0.5,0.5,
+ 1,0.05,1,0.05,1,0.05,0.25,0.25,0.25,0.25,
+ 1,0.05,1,0.05,0.5,0.5,0.5,0.5,
+ 1,0.05,1,0.05,1,0.05,0.25,0.25,0.25,0.25,
+1.5,0.5,0.05,0.5,0.5,0.05,1,
+1,0.5,0.5,0.5,0.25,0.25,0.5,0.5,
+0.5,0.5,1,0.25,2,
+1,0.5,0.5,0.5,0.5,0.5,0.5,
+1,1,0.5,0.25,0.25,1,
+1,0.5,0.5,0.5,0.5,0.5,0.25,0.25,
+0.5,0.5,0.5,0.25,0.25,1,0.5,0.5,
+0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.25,0.25,
+1,1,0.5,0.5,0.5,0.5,
+0.5,0.5,0.5,0.5,1,0.5,0.5,
+0.5,0.5,0.5,0.5,1,1,
+0.5,0.5,0.5,0.5,0.5,0.25,0.25,0.5,0.5,
+0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,
+0.5,0.5,0.5,0.5,1,0.5,0.5,
+0.5,0.5,0.5,0.5,1,1,
+0.5,0.5,0.5,0.5,0.5,0.25,0.25,0.25,0.25,0.5,
+0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.25,0.25,
+0.5,1,0.5,1,0.5,0.25,0.25,
+0.5,0.25,0.25,0.5,0.5,1,0.5,0.25,0.25
+,1,1,0.25,0.5,0.5,0.5,0.5,
+1,0.25,0.5,0.5,1,1
+,0.5,0.25,0.25,0.5,0.5,0.5,0.5,0.5,0.5,
+0.5,0.25,0.25,0.5,0.5,1,0.5,0.5,
+0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.25,0.25,
+0.5,0.5,0.5,0.5,0.5,1,0.5,
+0.5,0.5,0.5,0.5,0.5,0.5,0.5,1,0.5,0.5,0.5,0.5,0.5,0.5,1,1,
+0.5,0.5,0.5,0.5,0.5,0.25,0.25,0.5,0.25,0.25,
+0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,
+0.5,0.5,0.5,0.5,1,0.5,0.25,0.25,
+0.5,0.25,0.25,0.5,0.5,1,0.5,0.25,0.25
+,1,1,0.25,0.5,0.5,0.5,0.5,
+1,0.25,0.5,0.5,1,1
+,0.5,0.25,0.25,0.5,0.5,0.5,0.5,0.5,0.5,
+0.5,0.25,0.25,0.5,0.5,1,0.5,0.5,
+0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.25,0.25,
+0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,
+0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.25,0.25,
+0.5,0.5,0.5,0.5,1,1
+};
+
+int length;//定义一个变量用来表示共有多少个音符
+
+void playMusic() {
+//  pinMode(9, OUTPUT);
+  interrupts();
+  uint16_t fsd;
+  length = sizeof(tune_Astronomia) / sizeof(tune_Astronomia[0]); //这里用了一个sizeof函数，查出数组里有多少个音符
+  for (int x = 0; x < length; x++) //循环音符的次数
+  {
+//    //tone(9, tune[x]); //依次播放tune数组元素，即每个音符
+    fsd = 8000000 / pgm_read_float_near(&tune_Astronomia[x]);
+    Serial.println(fsd);
+    setupPWM(fsd);
+    analogWrite16(9, fsd / 100 * OC1);
+    delay(400 * pgm_read_float_near(&duration_Astronomia[x])); //每个音符持续的时间，即节拍duration，400是调整时间的越大，曲子速度越慢，越小曲子速度越快
+  }
+  setupPWM(0x0190);
+}
+/* MUSIC END */
+
 /* BUTTON FUNC START */
 void pressbutton() {
-  if(isshutdown) {
-    isshutdown = false;
-    UI_NEED_UPDATE = true;
-    UI_TARG_PAGE = UI_Main;
-  }
-  else {
-    shutdown_counter = 0;
-  }
   bool first, last;
   first = digitalRead(2);
   for(long long int i=1;i<=10;i++) {
@@ -316,16 +653,21 @@ void pressbutton() {
   if(first == last) {
     if(first) {
       Serial.println("Released.");
-      buttonstate = 0;
       t2 = millis();
       if(t2 - t1 < 300) {
         Serial.println("Short Press");
         EventCC(buttonShortPress);
       }
+      if(t2 - t1 < 50) {
+        Serial.println("Very Short Press, Trigger Music");
+        playMusic();
+        Serial.println("OK");
+      }
+      EventCC(buttonRelease);
     }
     else {
       Serial.println("Pressed.");
-      buttonstate = 1;
+      EventCC(buttonPress);
       t1 = millis();
       ledstate = !ledstate;
     }
@@ -372,9 +714,6 @@ void rotate() {
     }
   }
   digitalWrite(13, ledstate);
-//  for(long long int i=1;i<=1;i++) {
-//    delayMicroseconds(100);
-//  }
 }
 /* ROTARY ENCODER FUNC END */
 void soft_setup() {
